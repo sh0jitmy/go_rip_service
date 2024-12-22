@@ -1,0 +1,5 @@
+bindif: lo0
+receiveaddr: 127.0.0.1
+receiveport: 521
+sendaddrport: 127.0.0.1:520
+restapiport: 8081

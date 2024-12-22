@@ -31,13 +31,14 @@ type RIPPacket struct {
 }
 
 // RIPv2の送信
-func sendRIPUpdate() {
+func sendRIPUpdate(conn *net.UDPConn,dstaddr *net.UDPAddr) {
+	/*
 	conn, err := net.Dial("udp", "224.0.0.9:520")
 	if err != nil {
 		log.Fatalf("Failed to dial: %v", err)
 	}
 	defer conn.Close()
-
+	*/
 	packet := createRIPUpdatePacket()
 	log.Printf("update packet: %v\n", packet)
 
@@ -51,19 +52,46 @@ func sendRIPUpdate() {
 	}
 
 	// パケット送信
-	if _, err := conn.Write(buf.Bytes()); err != nil {
+	//if _, err := conn.Write(buf.Bytes()); err != nil {
+	if _, err := conn.WriteToUDP(buf.Bytes(),dstaddr); err != nil {
 		log.Printf("Failed to send RIP update: %v", err)
 	}
 }
 
 // RIPv2の受信
-func startRIPListener(ifname string) {
-	address, err := net.ResolveUDPAddr("udp", "224.0.0.9:520")
-	conn, err := net.ListenMulticastUDP("udp", nil,address)
+func startRIPService(ifname, addr,port,dstaddrport string) {
+	var ifi *net.Interface = nil	
+	var conn *net.UDPConn = nil	
+	multienable := false
+
+	dstaddr := net.ParseIP(addr)
+	if (dstaddr.IsMulticast()) {
+		multienable = true
+	}
+	address, err := net.ResolveUDPAddr("udp", addr+":"+port)
 	if err != nil {
 		log.Fatalf("Failed to start listener: %v", err)
 	}
+	if ifname != "" {
+		ifi , _ = net.InterfaceByName(ifname)
+	}
+	if (multienable) {
+		conn, err = net.ListenMulticastUDP("udp", ifi,address)
+		if err != nil {
+			log.Fatalf("Failed to start listener: %v", err)
+		}
+	} else {
+		conn, err = net.ListenUDP("udp", address)
+		if err != nil {
+			log.Fatalf("Failed to start listener: %v", err)
+		}
+	}
 	defer conn.Close()
+	if dstaddrport == "" {
+		dstaddrport = addr+":"+port
+	}
+	
+	go startRIPBroadcaster(conn,dstaddrport)
 
 	for {
 		buf := make([]byte, 2048)
@@ -79,16 +107,25 @@ func startRIPListener(ifname string) {
 }
 
 // startRIPBroadcaster 定期的にRIP Updateを送信する
-func startRIPBroadcaster() {
+func startRIPBroadcaster(conn *net.UDPConn,dstaddrport string) {
+	dstaddress, err := net.ResolveUDPAddr("udp", dstaddrport)
+	if err != nil {
+		log.Fatalf("Failed to start Broadcaster: %v", err)
+	}
+	/*	
+	conn, err := net.DialUDP("udp", address)
+	if err != nil {
+		log.Fatalf("Failed to dial: %v", err)
+	}
+	*/
 	ticker := time.NewTicker(30 * time.Second) // 30秒ごとに送信
 	defer ticker.Stop()
-
 	log.Println("RIP Broadcaster started")
 	for {
 		select {
 		case <-ticker.C:
 			log.Println("Sending RIP Update")
-			sendRIPUpdate()
+			sendRIPUpdate(conn,dstaddress)
 		}
 	}
 }
