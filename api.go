@@ -7,29 +7,33 @@ import (
 )
 
 // POST, GET, DELETEのAPIを実装
-func routesHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		var route Route
-		if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
+func routesHandler(apinotify chan string) func (w http.ResponseWriter, r *http.Request) {
+	return func (w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			var route Route
+			if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+			addRoute(route)
+			w.WriteHeader(http.StatusCreated)
+			apinotify <- "add notify"
+		case http.MethodGet:
+			routes := getRoutes()
+			json.NewEncoder(w).Encode(routes)
+		case http.MethodDelete:
+			var route Route
+			if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+			removeRoute(route)
+			w.WriteHeader(http.StatusNoContent)
+			apinotify <- "del notify"
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-		addRoute(route)
-		w.WriteHeader(http.StatusCreated)
-	case http.MethodGet:
-		routes := getRoutes()
-		json.NewEncoder(w).Encode(routes)
-	case http.MethodDelete:
-		var route Route
-		if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-		removeRoute(route)
-		w.WriteHeader(http.StatusNoContent)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 

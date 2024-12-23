@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-
+ripcont
 # Test binary, built with `go test -c`
 *.test
 

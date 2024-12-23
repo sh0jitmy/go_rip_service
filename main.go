@@ -19,12 +19,10 @@ type RipConfig struct {
 
 func main() {
 	config := loadConfig()	
-	//go startRIPService("lo0","224.0.0.9","520","224.0.0.9:520") // RIPv2の受信処理開始 (ポート520)
-	go startRIPService(config.BindIf,config.ReceiveAddr,config.ReceivePort,config.SendAddrPort) // RIPv2の受信処理開始 (ポート520)
-	//go startRIPBroadcaster("eth0","224.0.0.9:520")    // RIPv2の送信処理開始
-
+	apinotify := make(chan string)
+	go startRIPService(config.BindIf,config.ReceiveAddr,config.ReceivePort,config.SendAddrPort,apinotify) // RIPv2の受信処理開始 (ポート520)
 	// HTTP APIサーバーの起動
-	http.HandleFunc("/routes", routesHandler)       // API経由の経路情報
+	http.HandleFunc("/routes", routesHandler(apinotify))       // API経由の経路情報
 	http.HandleFunc("/rip-routes", ripRoutesHandler) // RIP Updateからの経路情報
 
 	log.Printf("API server started on port %v",config.RestApiPort)

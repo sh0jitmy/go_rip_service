@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"time"
+	"strconv"
 )
 
 // RIPv2ヘッダー
@@ -59,7 +60,7 @@ func sendRIPUpdate(conn *net.UDPConn,dstaddr *net.UDPAddr) {
 }
 
 // RIPv2の受信
-func startRIPService(ifname, addr,port,dstaddrport string) {
+func startRIPService(ifname, addr,port,dstaddrport string,apinotify chan string) {
 	var ifi *net.Interface = nil	
 	var conn *net.UDPConn = nil	
 	multienable := false
@@ -91,7 +92,7 @@ func startRIPService(ifname, addr,port,dstaddrport string) {
 		dstaddrport = addr+":"+port
 	}
 	
-	go startRIPBroadcaster(conn,dstaddrport)
+	go startRIPBroadcaster(conn,dstaddrport,apinotify)
 
 	for {
 		buf := make([]byte, 2048)
@@ -102,12 +103,12 @@ func startRIPService(ifname, addr,port,dstaddrport string) {
 		}
 
 		log.Printf("Received %d bytes from %s", n, addr)
-		processRIPPacket(buf[:n])
+		processRIPPacket(ifname,buf[:n])
 	}
 }
 
 // startRIPBroadcaster 定期的にRIP Updateを送信する
-func startRIPBroadcaster(conn *net.UDPConn,dstaddrport string) {
+func startRIPBroadcaster(conn *net.UDPConn,dstaddrport string,apinotify chan string) {
 	dstaddress, err := net.ResolveUDPAddr("udp", dstaddrport)
 	if err != nil {
 		log.Fatalf("Failed to start Broadcaster: %v", err)
@@ -124,14 +125,20 @@ func startRIPBroadcaster(conn *net.UDPConn,dstaddrport string) {
 	for {
 		select {
 		case <-ticker.C:
-			log.Println("Sending RIP Update")
+			log.Println("RIP Inteval Update")
 			sendRIPUpdate(conn,dstaddress)
+		case <-apinotify:
+			log.Println("RIP Trigger Update")
+			sendRIPUpdate(conn,dstaddress)
+			//reset
+			ticker.Stop()
+			ticker = time.NewTicker(30 * time.Second) // 30秒ごとに送信
 		}
 	}
 }
 
 
-func processRIPPacket(data []byte) {
+func processRIPPacket(ifname string,data []byte) {
 	var packet RIPPacket
 	buf := bytes.NewReader(data)
 
@@ -167,11 +174,13 @@ func processRIPPacket(data []byte) {
 		destination := net.IP(entry.IP[:]).String()
 		gateway := net.IP(entry.NextHop[:]).String()
 		subnetMask := net.IP(entry.SubnetMask[:]).String()
+		metrics := strconv.Itoa(int(entry.Metric))
 
 		route := Route{
 			Destination: destination + "/" + subnetMask,
 			Gateway:     gateway,
-			Interface:   "unknown", // ここで受信インターフェイスを指定可能
+			Interface:   ifname, // ここで受信インターフェイスを指定可能
+			Metric:      metrics, 
 			ExpiresAt:   time.Now().Add(180 * time.Second), // 有効期限180秒
 		}
 		addRIPRoute(route)
@@ -202,9 +211,9 @@ func createRIPUpdatePacket() RIPPacket {
 		copy(entry.IP[:], ip.To4())
 		copy(entry.SubnetMask[:], net.IP(ipNet.Mask).To4())
 		copy(entry.NextHop[:], net.ParseIP(route.Gateway).To4())
-
+		metric,_ := strconv.Atoi(route.Metric)
+		entry.Metric = uint32(metric)
 		// メトリックを設定 (固定値)
-		entry.Metric = 1
 
 		packet.Entries = append(packet.Entries, entry)
 	}
